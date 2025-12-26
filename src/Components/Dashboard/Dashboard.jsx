@@ -373,6 +373,8 @@ const DashboardFamilyTree = () => {
   };
 
   // ===== Зум колесиком мыши =====
+  // ===== Зум колесиком мыши =====
+  // ===== Зум колесиком мыши =====
   useEffect(() => {
     let zoomTimeout;
 
@@ -383,8 +385,28 @@ const DashboardFamilyTree = () => {
 
         clearTimeout(zoomTimeout);
         zoomTimeout = setTimeout(() => {
-          const delta = -e.deltaY * 0.001;
-          setZoom(z => Math.max(0.3, Math.min(2, z + delta)));
+          // Уменьшаем чувствительность в 2 раза
+          const delta = -e.deltaY * 0.0005; // Было 0.001
+
+          const newZoom = Math.max(0.3, Math.min(2, zoom + delta));
+
+          // Вычисляем позицию курсора относительно контейнера
+          const rect = containerRef.current.getBoundingClientRect();
+          const mouseX = e.clientX - rect.left;
+          const mouseY = e.clientY - rect.top;
+
+          // Преобразуем позицию курсора в мировые координаты
+          const worldX = (mouseX - position.x) / zoom;
+          const worldY = (mouseY - position.y) / zoom;
+
+          // Вычисляем новую позицию, чтобы точка под курсором осталась на месте
+          const newPosition = {
+            x: mouseX - worldX * newZoom,
+            y: mouseY - worldY * newZoom
+          };
+
+          setZoom(newZoom);
+          setPosition(newPosition);
         }, 16);
       }
     };
@@ -396,7 +418,7 @@ const DashboardFamilyTree = () => {
         clearTimeout(zoomTimeout);
       };
     }
-  }, []);
+  }, [zoom, position]);
 
   // ===== Функции панорамирования для мыши =====
   const panDown = (e) => {
@@ -465,31 +487,60 @@ const DashboardFamilyTree = () => {
     setIsPanning(false);
   };
 
-  // ===== Зум для тач-устройств (pinch-to-zoom) =====
+  // ===== Зум для тач-устройств (pinch-to-zoom) с центрированием =====
+  // ===== Зум для тач-устройств (pinch-to-zoom) с центрированием =====
   useEffect(() => {
     let initialDistance = 0;
     let initialZoom = zoom;
+    let initialPosition = { ...position };
+    let centerX = 0;
+    let centerY = 0;
 
     const handleTouchStartForZoom = (e) => {
       if (e.touches.length === 2) {
-        const dx = e.touches[0].clientX - e.touches[1].clientX;
-        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const rect = containerRef.current.getBoundingClientRect();
+
+        // Вычисляем центр между двумя пальцами
+        const touch1 = e.touches[0];
+        const touch2 = e.touches[1];
+        centerX = (touch1.clientX + touch2.clientX) / 2 - rect.left;
+        centerY = (touch1.clientY + touch2.clientY) / 2 - rect.top;
+
+        const dx = touch1.clientX - touch2.clientX;
+        const dy = touch1.clientY - touch2.clientY;
         initialDistance = Math.sqrt(dx * dx + dy * dy);
         initialZoom = zoom;
+        initialPosition = { ...position };
       }
     };
 
     const handleTouchMoveForZoom = (e) => {
       if (e.touches.length === 2) {
         e.preventDefault();
-        const dx = e.touches[0].clientX - e.touches[1].clientX;
-        const dy = e.touches[0].clientY - e.touches[1].clientY;
+
+        const touch1 = e.touches[0];
+        const touch2 = e.touches[1];
+        const dx = touch1.clientX - touch2.clientX;
+        const dy = touch1.clientY - touch2.clientY;
         const currentDistance = Math.sqrt(dx * dx + dy * dy);
 
         if (initialDistance > 0) {
-          const scale = currentDistance / initialDistance;
-          const newZoom = initialZoom * scale;
-          setZoom(Math.max(0.3, Math.min(2, newZoom)));
+          // Уменьшаем чувствительность pinch-to-zoom
+          const scale = 1 + (currentDistance - initialDistance) / (initialDistance * 3);
+          const newZoom = Math.max(0.3, Math.min(2, initialZoom * scale));
+
+          // Преобразуем позицию центра в мировые координаты
+          const worldX = (centerX - initialPosition.x) / initialZoom;
+          const worldY = (centerY - initialPosition.y) / initialZoom;
+
+          // Вычисляем новую позицию, чтобы точка под центром осталась на месте
+          const newPosition = {
+            x: centerX - worldX * newZoom,
+            y: centerY - worldY * newZoom
+          };
+
+          setZoom(newZoom);
+          setPosition(newPosition);
         }
       }
     };
@@ -504,7 +555,7 @@ const DashboardFamilyTree = () => {
         container.removeEventListener('touchmove', handleTouchMoveForZoom);
       };
     }
-  }, [zoom]);
+  }, [zoom, position]);
 
   // ===== Обработка кликов на пустом месте =====
   const handleBackgroundClick = (e) => {
@@ -587,7 +638,7 @@ const DashboardFamilyTree = () => {
                     fontSize="14"
                     fontWeight="bold"
                   >
-                    
+
                   </text>
                 )}
               </g>
