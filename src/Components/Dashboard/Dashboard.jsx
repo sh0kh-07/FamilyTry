@@ -116,13 +116,13 @@ const DashboardFamilyTree = () => {
   const [familyData, setFamilyData] = useState([]);
   const [nodes, setNodes] = useState([]);
   const [connections, setConnections] = useState([]);
-  const [expandedNodes, setExpandedNodes] = useState(new Set(["1", "2", "3"])); // По умолчанию открыты основатель и его дети
+  const [expandedNodes, setExpandedNodes] = useState(new Set(["1"])); // Только основатель открыт по умолчанию
   const [screenSize, setScreenSize] = useState({
     width: typeof window !== 'undefined' ? window.innerWidth : 1024,
     height: typeof window !== 'undefined' ? window.innerHeight : 768
   });
   const [draggingNode, setDraggingNode] = useState(null);
-  const [showPositions, setShowPositions] = useState(true);
+  const [showPositions, setShowPositions] = useState(false);
 
   // ===== Зум/Пан =====
   const [zoom, setZoom] = useState(0.8);
@@ -131,6 +131,7 @@ const DashboardFamilyTree = () => {
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const containerRef = useRef(null);
   const dragStartPos = useRef({ x: 0, y: 0 });
+  const lastTouchTime = useRef(0);
 
   // ===== Отслеживание размера экрана =====
   useEffect(() => {
@@ -325,7 +326,7 @@ const DashboardFamilyTree = () => {
 
     document.addEventListener('mousemove', handleDragMove);
     document.addEventListener('mouseup', handleDragEnd);
-    document.addEventListener('touchmove', handleDragMove);
+    document.addEventListener('touchmove', handleDragMove, { passive: false });
     document.addEventListener('touchend', handleDragEnd);
   };
 
@@ -397,55 +398,139 @@ const DashboardFamilyTree = () => {
     }
   }, []);
 
-  // ===== Функции панорамирования =====
+  // ===== Функции панорамирования для мыши =====
   const panDown = (e) => {
+    // Если это карточка - не панорамируем
+    if (e.target.closest('[data-card="true"]')) {
+      return;
+    }
+
     if (e.button !== 0 || e.ctrlKey || draggingNode) return;
     setIsPanning(true);
     setPanStart({
-      x: (e.clientX || (e.touches && e.touches[0].clientX)) - position.x,
-      y: (e.clientY || (e.touches && e.touches[0].clientY)) - position.y
+      x: e.clientX - position.x,
+      y: e.clientY - position.y
     });
+
+    document.addEventListener('mousemove', panMoveMouse);
+    document.addEventListener('mouseup', panUp);
   };
 
-  const panMove = (e) => {
+  const panMoveMouse = (e) => {
     if (isPanning) {
-      const clientX = e.clientX || (e.touches && e.touches[0].clientX);
-      const clientY = e.clientY || (e.touches && e.touches[0].clientY);
-      setPosition({ x: clientX - panStart.x, y: clientY - panStart.y });
+      setPosition({ x: e.clientX - panStart.x, y: e.clientY - panStart.y });
     }
   };
 
-  const panUp = () => setIsPanning(false);
+  const panUp = () => {
+    setIsPanning(false);
+    document.removeEventListener('mousemove', panMoveMouse);
+    document.removeEventListener('mouseup', panUp);
+  };
 
-  // ===== Обработка тач-событий =====
+  // ===== Функции панорамирования для тач-устройств =====
   const handleTouchStart = (e) => {
-    if (e.touches.length === 1) {
-      panDown(e);
+    // Если это карточка - не панорамируем (это будет перетаскивание карточки)
+    if (e.target.closest('[data-card="true"]')) {
+      return;
+    }
+
+    if (e.touches.length === 1 && !draggingNode) {
+      e.preventDefault();
+      setIsPanning(true);
+      setPanStart({
+        x: e.touches[0].clientX - position.x,
+        y: e.touches[0].clientY - position.y
+      });
+      lastTouchTime.current = Date.now();
     }
   };
 
   const handleTouchMove = (e) => {
-    panMove(e);
+    if (isPanning && e.touches.length === 1) {
+      e.preventDefault();
+      setPosition({
+        x: e.touches[0].clientX - panStart.x,
+        y: e.touches[0].clientY - panStart.y
+      });
+    }
   };
 
-  const handleTouchEnd = () => {
-    panUp();
+  const handleTouchEnd = (e) => {
+    // Если был короткий тап на пустом месте - ничего не делаем
+    const touchDuration = Date.now() - lastTouchTime.current;
+    if (touchDuration < 200 && !e.target.closest('[data-card="true"]')) {
+      // Это был короткий тап на пустом месте, игнорируем
+    }
+    setIsPanning(false);
+  };
+
+  // ===== Зум для тач-устройств (pinch-to-zoom) =====
+  useEffect(() => {
+    let initialDistance = 0;
+    let initialZoom = zoom;
+
+    const handleTouchStartForZoom = (e) => {
+      if (e.touches.length === 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        initialDistance = Math.sqrt(dx * dx + dy * dy);
+        initialZoom = zoom;
+      }
+    };
+
+    const handleTouchMoveForZoom = (e) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const currentDistance = Math.sqrt(dx * dx + dy * dy);
+
+        if (initialDistance > 0) {
+          const scale = currentDistance / initialDistance;
+          const newZoom = initialZoom * scale;
+          setZoom(Math.max(0.3, Math.min(2, newZoom)));
+        }
+      }
+    };
+
+    const container = containerRef.current;
+    if (container) {
+      container.addEventListener('touchstart', handleTouchStartForZoom, { passive: true });
+      container.addEventListener('touchmove', handleTouchMoveForZoom, { passive: false });
+
+      return () => {
+        container.removeEventListener('touchstart', handleTouchStartForZoom);
+        container.removeEventListener('touchmove', handleTouchMoveForZoom);
+      };
+    }
+  }, [zoom]);
+
+  // ===== Обработка кликов на пустом месте =====
+  const handleBackgroundClick = (e) => {
+    // Если кликнули на пустое место - ничего не делаем
+    if (!e.target.closest('[data-card="true"]')) {
+      return;
+    }
   };
 
   return (
     <div className="w-full h-screen bg-gradient-to-b from-blue-50 via-white to-blue-50 overflow-hidden">
       <div
         ref={containerRef}
-        className="w-full h-full relative touch-none"
+        className="w-full h-full relative touch-none select-none"
         onMouseDown={panDown}
-        onMouseMove={panMove}
         onMouseUp={panUp}
         onMouseLeave={panUp}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
+        onClick={handleBackgroundClick}
         style={{
           cursor: isPanning ? "grabbing" : draggingNode ? "grabbing" : "grab",
+          userSelect: 'none',
+          WebkitUserSelect: 'none',
+          msUserSelect: 'none',
         }}
       >
         <div
@@ -455,6 +540,7 @@ const DashboardFamilyTree = () => {
             height: WORLD_H,
             transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`,
             transformOrigin: "0 0",
+            touchAction: 'none',
           }}
         >
           {/* SVG линии связей */}
@@ -527,7 +613,9 @@ const DashboardFamilyTree = () => {
                   zIndex: isDragging ? 10 : 1,
                   transform: isDragging ? 'scale(1.05)' : 'scale(1)',
                   opacity: isDragging ? 0.9 : 1,
+                  touchAction: 'none',
                 }}
+                data-card="true"
                 onMouseDown={(e) => handleDragStart(node.id, e)}
                 onTouchStart={(e) => handleDragStart(node.id, e)}
                 onClick={(e) => !isSpouse && handleCardClick(node.id, e)}
@@ -538,6 +626,7 @@ const DashboardFamilyTree = () => {
                   ${hasChildren && !isSpouse ? 'hover:border-blue-400 cursor-pointer' : 'hover:border-gray-300 cursor-move'}
                   ${isSpouse ? 'border-red-200 cursor-move' : ''}
                   ${isDragging ? 'shadow-2xl border-yellow-500' : ''}
+                  touch-none select-none
                 `}>
                   <CardBody className="p-3">
                     <div className="flex flex-col items-center text-center">
@@ -548,13 +637,14 @@ const DashboardFamilyTree = () => {
                           alt={node.name}
                           className="w-full h-full object-cover"
                           loading="lazy"
+                          draggable="false"
                         />
                       </div>
 
                       {/* Имя */}
                       <Typography
                         variant="small"
-                        className="font-bold text-gray-800 mb-1 text-sm leading-tight"
+                        className="font-bold text-gray-800 mb-1 text-sm leading-tight select-none"
                       >
                         {node.name}
                       </Typography>
@@ -563,9 +653,9 @@ const DashboardFamilyTree = () => {
                       <Typography
                         variant="small"
                         className={`text-xs px-2 py-1 rounded-full mb-1 ${isSpouse
-                            ? 'bg-red-50 text-red-600'
-                            : 'bg-blue-50 text-blue-600'
-                          }`}
+                          ? 'bg-red-50 text-red-600'
+                          : 'bg-blue-50 text-blue-600'
+                          } select-none`}
                       >
                         {node.role}
                       </Typography>
@@ -573,17 +663,15 @@ const DashboardFamilyTree = () => {
                       {/* Год рождения */}
                       <Typography
                         variant="small"
-                        className="text-gray-500 text-xs mb-1"
+                        className="text-gray-500 text-xs mb-1 select-none"
                       >
                         {node.birthYear} г.р.
                       </Typography>
 
-                
-
                       {/* Индикаторы */}
                       <div className="flex items-center justify-center gap-2 mt-1">
                         {hasChildren && !isSpouse && (
-                          <div className="flex items-center text-xs">
+                          <div className="flex items-center text-xs select-none">
                             <span className={`mr-1 ${isExpanded ? 'text-green-600' : 'text-gray-500'}`}>
                               {node.children.length} дет.
                             </span>
@@ -593,7 +681,8 @@ const DashboardFamilyTree = () => {
                           </div>
                         )}
 
-                        <div className="text-xs text-gray-400" title={isSpouse ? "Перетаскивайте" : "Клик - показать детей, перетаскивание - переместить"}>
+                        <div className="text-xs text-gray-400 select-none"
+                          title={isSpouse ? "Перетаскивайте" : "Клик - показать детей, перетаскивание - переместить"}>
                           {isSpouse ? '🖱️' : ''}
                         </div>
                       </div>
@@ -612,25 +701,15 @@ const DashboardFamilyTree = () => {
             <svg className="w-4 h-4 text-indigo-600" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" />
             </svg>
-            <span className="text-sm font-medium text-gray-700">
+            <span className="text-sm font-medium text-gray-700 select-none">
               {Math.round(zoom * 100)}%
             </span>
           </div>
         </div>
 
 
-        {/* Легенда для мобильных */}
-        {screenSize.width < 768 && (
-          <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-sm rounded-lg shadow px-3 py-2 border border-gray-200">
-            <Typography variant="small" className="text-gray-600 text-xs">
-              👆 Клик - показать детей (кроме супругов)
-              <br />
-              🤏 Два пальца - масштаб
-              <br />
-              👆 Один палец - перемещение
-            </Typography>
-          </div>
-        )}
+
+
       </div>
     </div>
   );
