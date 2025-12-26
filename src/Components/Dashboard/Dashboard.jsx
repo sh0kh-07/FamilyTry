@@ -374,7 +374,6 @@ const DashboardFamilyTree = () => {
 
   // ===== Зум колесиком мыши =====
   // ===== Зум колесиком мыши =====
-  // ===== Зум колесиком мыши =====
   useEffect(() => {
     let zoomTimeout;
 
@@ -385,8 +384,8 @@ const DashboardFamilyTree = () => {
 
         clearTimeout(zoomTimeout);
         zoomTimeout = setTimeout(() => {
-          // Уменьшаем чувствительность в 2 раза
-          const delta = -e.deltaY * 0.0005; // Было 0.001
+          // УВЕЛИЧИВАЕМ чувствительность в 5 раз
+          const delta = -e.deltaY * 0.005; // Было 0.001, теперь 0.005 (в 5 раз больше)
 
           const newZoom = Math.max(0.3, Math.min(2, zoom + delta));
 
@@ -489,6 +488,7 @@ const DashboardFamilyTree = () => {
 
   // ===== Зум для тач-устройств (pinch-to-zoom) с центрированием =====
   // ===== Зум для тач-устройств (pinch-to-zoom) с центрированием =====
+  // ===== Зум для тач-устройств (pinch-to-zoom) с центрированием =====
   useEffect(() => {
     let initialDistance = 0;
     let initialZoom = zoom;
@@ -525,9 +525,10 @@ const DashboardFamilyTree = () => {
         const currentDistance = Math.sqrt(dx * dx + dy * dy);
 
         if (initialDistance > 0) {
-          // Уменьшаем чувствительность pinch-to-zoom
-          const scale = 1 + (currentDistance - initialDistance) / (initialDistance * 3);
-          const newZoom = Math.max(0.3, Math.min(2, initialZoom * scale));
+          // УВЕЛИЧИВАЕМ чувствительность pinch-to-zoom в 5 раз
+          const scale = currentDistance / initialDistance;
+          const zoomChange = (scale - 1) * 5; // В 5 раз чувствительнее
+          const newZoom = Math.max(0.3, Math.min(2, initialZoom * (1 + zoomChange)));
 
           // Преобразуем позицию центра в мировые координаты
           const worldX = (centerX - initialPosition.x) / initialZoom;
