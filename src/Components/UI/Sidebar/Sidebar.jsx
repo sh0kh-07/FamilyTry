@@ -1,6 +1,5 @@
 import { NavLink, useLocation } from "react-router-dom";
 import { useState } from "react";
-import Logo from "../../../Images/Logo.png";
 import { Card, Typography } from "@material-tailwind/react";
 
 export default function Sidebar({ open }) {
